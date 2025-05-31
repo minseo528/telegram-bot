@@ -7,6 +7,8 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from flask import Flask
+import threading
 
 # ✅ .env 환경변수 로드
 load_dotenv()
@@ -20,9 +22,7 @@ URL = f"https://api.telegram.org/bot{TOKEN}"
 # 🔁 앱 링크 → 웹 링크 리디렉션 처리
 def resolve_redirected_url(short_url):
     try:
-        headers = {
-            "User-Agent": "Mozilla/5.0"
-        }
+        headers = {"User-Agent": "Mozilla/5.0"}
         res = requests.get(short_url, headers=headers, allow_redirects=True, timeout=5)
         if "www.musinsa.com/products/" in res.url:
             return res.url
@@ -42,31 +42,24 @@ def login_and_get_driver():
     driver.get("https://www.musinsa.com/auth/login?referer=https%3A%2F%2Fwww.musinsa.com%2Fmypage")
 
     try:
-        # 아이디 입력 필드 대기 및 입력
         id_input = WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "input[placeholder='아이디']"))
         )
         id_input.send_keys(LOGIN_ID)
-
-        # 비밀번호 입력
         pw_input = driver.find_element(By.CSS_SELECTOR, "input[placeholder='비밀번호']")
         pw_input.send_keys(LOGIN_PW)
-
-        # 로그인 버튼 클릭
         login_btn = driver.find_element(By.CLASS_NAME, "login-v2-button--highlight")
         login_btn.click()
-
-        sleep(2)  # 로그인 후 리다이렉션 대기
-
+        sleep(2)
     except Exception as e:
-        print("❌ 로그인 실패:", e)
-        driver.save_screenshot("login_fail.png")  # 디버깅용 스크린샷 저장
+        print("회원 로그인 실패:", e)
+        driver.save_screenshot("login_fail.png")
         driver.quit()
         return None
 
     return driver
 
-# 🛍️ 상품 정보 추출
+# 플래시 상품 정보 추출
 def extract_product_info(url):
     driver = login_and_get_driver()
     if not driver:
@@ -92,10 +85,10 @@ def extract_product_info(url):
     except:
         discount_price = "할인가 없음"
 
-    # "최대혜택가" 텍스트 앞의 숫자만 추출
-    # 실구매가 추출 (예: 32,650원)
     try:
-        real_price = WebDriverWait(driver, 5).until(EC.presence_of_element_located((By.XPATH,'//span[text()="최대혜택가"]/preceding::span[1]'))).text.strip()
+        real_price = WebDriverWait(driver, 5).until(
+            EC.presence_of_element_located((By.XPATH, '//span[text()="최대혜택가"]/preceding::span[1]'))
+        ).text.strip()
     except:
         real_price = "실구매가 없음"
 
@@ -106,9 +99,9 @@ def extract_product_info(url):
 def send_message(chat_id, text):
     requests.post(f"{URL}/sendMessage", data={"chat_id": chat_id, "text": text})
 
-# 🤖 봇 실행 루프
+# 번역 버스 반응 룸
 def run_bot():
-    print("🤖 봇 실행 중... 링크를 보내보세요!")
+    print("번역 복사 발번 중...")
     last_update_id = None
 
     while True:
@@ -137,25 +130,32 @@ def run_bot():
                     if "musinsaapp.page.link" in url:
                         redirected = resolve_redirected_url(url)
                         if not redirected:
-                            send_message(chat_id, "⚠️ 링크를 웹 주소로 변환하지 못했어요.\n웹 링크를 직접 보내주세요.")
+                            send_message(chat_id, "링크를 웹 주소로 변환하지 못했어요. \n웹 링크를 직접 보내주세요.")
                             continue
                         url = redirected
 
-                    print("🔗 최종 URL:", url)
                     name, origin, discount, real = extract_product_info(url)
 
-                    print("\n[상품 정보]")
-                    print("상품명:", name)
-                    print("정가:", origin)
-                    print("할인가:", discount)
-                    print("실구매가:", real)
-
-                    msg = f"🛍️ 상품 정보\n상품명: {name}\n정가: {origin}\n할인가: {discount}\n실구매가: {real}"
+                    msg = f"상품 정보\n상품명: {name}\n정가: {origin}\n할인가: {discount}\n실구매가: {real}"
                     send_message(chat_id, msg)
 
         except Exception as e:
-            print("❌ 오류 발생:", e)
+            print("오류 발생:", e)
             sleep(2)
 
+# 🌐 Flask server for Render app detection
+app = Flask(__name__)
+
+@app.route('/')
+def index():
+    return "Telegram bot is running!"
+
+def start_flask():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
+
+# ✅ Flask + 봇 병렬 실행
 if __name__ == "__main__":
-    run_bot()
+    t1 = threading.Thread(target=run_bot)
+    t1.start()
+    start_flask()
