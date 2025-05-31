@@ -1,6 +1,7 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
 
 attrs==25.3.0
+beautifulsoup4==4.12.3
 certifi==2025.4.26
 cffi==1.17.1
 charset-normalizer==3.4.2
